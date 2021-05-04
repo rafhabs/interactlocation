@@ -1,0 +1,2 @@
+com/rafhabs/interactlocation/BuildConfig.java
+ com.rafhabs.interactlocation.BuildConfig
