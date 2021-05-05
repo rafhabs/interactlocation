@@ -1,5 +1,6 @@
 package com.rafhabs.interactlocation
 
+import android.content.IntentSender
 import android.content.pm.PackageManager
 import android.location.Address
 import android.location.Geocoder
@@ -7,8 +8,8 @@ import android.location.Location
 import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
-import com.google.android.gms.location.FusedLocationProviderClient
-import com.google.android.gms.location.LocationServices
+import com.google.android.gms.common.api.ResolvableApiException
+import com.google.android.gms.location.*
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.GoogleMap
 import com.google.android.gms.maps.OnMapReadyCallback
@@ -28,8 +29,15 @@ class MapsActivity : AppCompatActivity(),
 
     private lateinit var lastLocation: Location
 
+    // variaveis para atualizar localização
+    private lateinit var locationCallback: LocationCallback
+    private lateinit var locationRequest: LocationRequest
+    private var locationUpdateState = false
+
+
     companion object {
         private const val LOCATION_PERMISSION_REQUEST_CODE = 1
+        private const val REQUEST_CHECK_SETTINGS = 2
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -42,6 +50,20 @@ class MapsActivity : AppCompatActivity(),
         mapFragment.getMapAsync(this)
 
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
+
+        locationCallback = object  : LocationCallback() {
+            override fun onLocationResult(p0: LocationResult?) {
+                super.onLocationResult(p0)
+
+                if (p0 != null) {
+                    lastLocation = p0.lastLocation
+                }
+                placeMarkerOnMap(LatLng(lastLocation.latitude,lastLocation.longitude))
+
+            }
+        }
+
+        createLocationRequest()
     }
 
     /**
@@ -125,6 +147,66 @@ class MapsActivity : AppCompatActivity(),
         val postalcode  = addresses[0].postalCode
 
         return address
+    }
+
+    // metodo para acompanhar a localização do usuario
+    private fun startLocationUpdates() {
+        if(ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, arrayOf(android.Manifest.permission.ACCESS_FINE_LOCATION), LOCATION_PERMISSION_REQUEST_CODE)
+            return
+        }
+
+        fusedLocationClient.requestLocationUpdates(locationRequest,locationCallback,null)
+    }
+
+    private fun createLocationRequest() {
+
+        locationRequest = LocationRequest()
+
+        // tempo de espera entre intervalos
+        locationRequest.interval = 10000
+        // tempo de espera rapido
+        locationRequest.fastestInterval = 5000
+        // prioridade grande
+        locationRequest.priority = LocationRequest.PRIORITY_HIGH_ACCURACY
+
+        // atualizando a builder
+        val builder = LocationSettingsRequest.Builder().addLocationRequest(locationRequest)
+        val client = LocationServices.getSettingsClient(this)
+        val task = client.checkLocationSettings(builder.build())
+
+        // dando sucesso na ação, atualiza a localização
+        task.addOnSuccessListener {
+            locationUpdateState = true
+            startLocationUpdates()
+
+        }
+
+        task.addOnFailureListener { e ->
+            if (e is ResolvableApiException) {
+
+                try{
+                    e.startResolutionForResult(this, REQUEST_CHECK_SETTINGS)
+                } catch (sendEx: IntentSender.SendIntentException){
+                    // ignorando o erro
+                }
+
+            }
+        }
+
+    }
+
+    override fun onPause() {
+        super.onPause()
+        fusedLocationClient.removeLocationUpdates(locationCallback)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if(!locationUpdateState) {
+            startLocationUpdates()
+        }
+
     }
 
     override fun onMarkerClick(p0: Marker?): Boolean = false
